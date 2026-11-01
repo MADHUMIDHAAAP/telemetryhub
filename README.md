@@ -27,3 +27,5 @@ Push to GitHub → Render → New → Blueprint → select repo (`render.yaml`).
 
 ## Problem → Solution → Impact
 Problem: cold-storage and industrial equipment faults are noticed late. Solution: continuous telemetry + duration-based threshold rules (no ML) with online/offline tracking. Impact: faults surface within seconds and every reading is exportable for audit.
+🔗 **Live demo:** (https://telemetryhub.onrender.com/)
+> Free hosting-la irukkaradhaala mudhal load aaga 30-60 seconds aagalaam.
