@@ -1,0 +1,48 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TelemetryHub</title><link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📡</text></svg>">
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--tx:#14181f;--mut:#6b7280;--bd:#e3e6eb;--ok:#16a34a;--bad:#dc2626;--ac:#2563eb}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--tx:#e8ebf0;--mut:#8b94a3;--bd:#262c36;--ok:#4ade80;--bad:#f87171;--ac:#60a5fa}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--bd);background:var(--card)}
+h1{font-size:18px;margin:0}main{padding:16px 20px;max-width:1300px;margin:auto}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+.tile b{display:block;font-size:24px}.mut{color:var(--mut);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.dev.hot{border-color:var(--bad)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}.off .dot{background:var(--mut)}
+.vals{display:flex;gap:10px;margin:6px 0;font-size:12px}.vals b{font-size:16px;display:block}
+svg{width:100%;height:40px}polyline{fill:none;stroke:var(--ac);stroke-width:1.5}.hot polyline{stroke:var(--bad)}
+.two{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:14px}@media(max-width:800px){.two{grid-template-columns:1fr}}
+h2{font-size:14px;margin:0 0 8px}.row{padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px}.row:last-child{border:0}
+.tag{font-size:11px;padding:1px 6px;border-radius:8px;border:1px solid var(--bd)}.tag.act{color:var(--bad);border-color:var(--bad)}
+form{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}input,select,button{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
+input{width:80px}button{cursor:pointer}a{color:var(--ac)}.x{float:right;border:0;color:var(--mut)}
+</style></head><body>
+<header><h1>📡 TelemetryHub</h1><span class="mut"><span id="ws">connecting…</span> · <a href="/api/export.csv?minutes=60">Export CSV</a> · <a href="/docs">API</a></span></header>
+<main>
+<div class="tiles"><div class="card tile"><span class="mut">Devices online</span><b id="t1">–</b></div><div class="card tile"><span class="mut">Active alerts</span><b id="t2">–</b></div><div class="card tile"><span class="mut">Readings stored</span><b id="t3">–</b></div></div>
+<div class="grid" id="grid"></div>
+<div class="two"><div class="card"><h2>Alerts</h2><div id="alerts"></div></div>
+<div class="card"><h2>Rules</h2><div id="rules"></div>
+<form id="rf"><select name="metric"><option>temperature</option><option>humidity</option><option>vibration</option></select><select name="op"><option>&gt;</option><option>&lt;</option></select><input name="threshold" type="number" step="any" placeholder="value" required><input name="duration" type="number" placeholder="secs" value="20" required><button>Add</button></form></div></div>
+</main>
+<script>
+const $=s=>document.querySelector(s),dev={},hist={};let alerts=[];
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function spark(a){if(a.length<2)return'';const mn=Math.min(...a),mx=Math.max(...a),r=mx-mn||1;return`<svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline points="${a.map((v,i)=>`${i*100/(a.length-1)},${38-(v-mn)/r*36}`).join(' ')}"/></svg>`}
+function draw(){const now=Date.now(),hot=new Set(alerts.filter(a=>!a.resolved).map(a=>a.device_id));
+$('#grid').innerHTML=Object.values(dev).sort((a,b)=>a.id<b.id?-1:1).map(d=>{const on=now-d.seen<15000;return`<div class="card dev ${on?'':'off'} ${hot.has(d.id)?'hot':''}"><div><span class="dot"></span><b>${esc(d.id)}</b></div><div class="vals"><div><b>${(d.temperature??0).toFixed(1)}°</b>temp</div><div><b>${(d.humidity??0).toFixed(0)}%</b>hum</div><div><b>${(d.vibration??0).toFixed(2)}</b>vib</div></div>${spark(hist[d.id]||[])}</div>`}).join('');
+$('#t1').textContent=Object.values(dev).filter(d=>now-d.seen<15000).length+'/'+Object.keys(dev).length;$('#t2').textContent=hot.size;
+$('#alerts').innerHTML=alerts.slice(0,30).map(a=>`<div class="row"><span class="tag ${a.resolved?'':'act'}">${a.resolved?'resolved':'active'}</span> ${esc(a.message)}<div class="mut">${new Date(a.ts*1000).toLocaleTimeString()}</div></div>`).join('')||'<span class="mut">No alerts yet</span>';}
+async function loadRules(){const r=await(await fetch('/api/rules')).json();$('#rules').innerHTML=r.map(x=>`<div class="row">${x.metric} ${esc(x.op)} ${x.threshold} for ${x.duration}s <button class="x" onclick="delRule(${x.id})">✕</button></div>`).join('')}
+async function delRule(id){await fetch('/api/rules/'+id,{method:'DELETE'});loadRules()}
+$('#rf').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));f.threshold=+f.threshold;f.duration=+f.duration;await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});loadRules()};
+async function init(){const ds=await(await fetch('/api/devices')).json();for(const d of ds){dev[d.id]={...d,seen:Date.now()-d.age*1000};hist[d.id]=(await(await fetch(`/api/readings/${d.id}?minutes=3`)).json()).map(x=>x.temperature)}
+alerts=await(await fetch('/api/alerts')).json();loadRules();draw();connect()}
+function connect(){const w=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');w.onopen=()=>{$('#ws').textContent='● live';w.send('hi')};
+w.onclose=()=>{$('#ws').textContent='reconnecting…';setTimeout(connect,2000)};
+w.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='reading'){dev[m.device_id]={...(dev[m.device_id]||{}),...m,id:m.device_id,seen:Date.now()};const h=hist[m.device_id]=hist[m.device_id]||[];h.push(m.temperature);if(h.length>90)h.shift()}else if(m.type==='alert'){alerts.unshift(m)}};}
+async function poll(){try{alerts=await(await fetch('/api/alerts')).json();const s=await(await fetch('/api/stats')).json();$('#t3').textContent=s.readings.toLocaleString()}catch(e){}}
+setInterval(poll,3000);setInterval(draw,1000);poll();init();
+</script></body></html>
