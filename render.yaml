@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: telemetryhub
+    runtime: docker
+    plan: free
+    envVars:
+      - {key: SIMULATOR, value: "1"}
